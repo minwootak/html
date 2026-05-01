@@ -1,0 +1,21 @@
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.input-section, .output-section {
+    flex: 1;
+    box-sizing: border-box;
+}
+
+.content {
+    padding: 20px;
+}
+
+.input-section {
+    border-right: 2px solid black;
+}
+
+.output-section {
+    overflow-y: auto;
+}
