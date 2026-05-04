@@ -11,6 +11,12 @@ const RC = [0x01];
 const xOrder = [3, 4, 0, 1, 2];
 const yOrder = [2, 1, 0, 4, 3];
 
+const kDateRes = "4aca50014674bace27a0633cc2767ce3ae3e72cf90656592d98714478c7c7156";
+const kRegionRes = "aa1d7bdd925a2d4fe642af67cd577daba040cd0f16df3b4f7a54fc6db49f5b7c";
+const kServiceRes = "262ef0c1ace903a38c06e55d5c669fa43bbdd31abbf6f2e122ea14a1bbd3188a";
+const kSigningRes = "a0f2993c415bbb018efb555f3207e51a19b0300434279c60ce42b842fdc361dc";
+const stringToSign = "AWS4-HMAC-SHA256\n20260414M123600Z\n20260414/us-east-1/iam/aws4_request\nf536975d06c0309214f805bb90ccff089219ecd68b2577efef23edd43b7e1a59";
+
 // ---- Preprocessing phase ----
 function ASCIIfy(personalInfo) {
     let ASCIIfiedBits = [];
@@ -63,7 +69,7 @@ function ConvertIntoState(rawInfo) {
 function rot(value, n) {
     n = n % 8;
     let bits = [];
-    for(let bit of value.toString(2).padStart(8, '0')) {
+    for(let bit of value.toString(2).padStart(8, "0")) {
         bits.push(parseInt(bit));
     }
     let shiftedBits = bits.slice(8 - n).concat(bits.slice(0, 8 - n));
@@ -72,6 +78,29 @@ function rot(value, n) {
         result = (result << 1) | bit;
     }
     return result & 0xFF;
+}
+
+function bitsToHex(bits) {
+    let hex = '';
+    for(let i=0; i<bits.length; i+=8) {
+        let byte = 0;
+        for(let j=0; j<8; j++) {
+            byte = (byte << 1) | bits[i + j];
+        }
+        hex += byte.toString(16).padStart(2, '0');
+    }
+    return hex;
+}
+
+function hexToBits(hex) {
+    let bits = [];
+    for(let i=0; i<hex.length; i+=2) {
+        let byte = parseInt(hex.slice(i, i+2), 16);
+        for(let j=7; j>=0; j--) {
+            bits.push((byte >> j) & 1);
+        }
+    }
+    return bits;
 }
 
 // ---- Theta phase ----
@@ -168,10 +197,43 @@ function iota(stateArray) {
     return newStateArray;
 }
 
+// ------ Q2 ------
+// ---- preprocessing ----
+function addPadding(input) {
+    const bitsLimit = 64 * 8;
+    const length = input.length;
+
+    if(length < bitsLimit) {
+        const paddngAmount = bitsLimit - length;
+        for(let i=0; i<paddngAmount; i++) {
+            input.push(0);
+        }
+    } else if(length>bitsLimit) {
+        return input.slice(0, bitsLimit);
+    }
+    return input;
+}
+
+// ---- XOR  ----
+function XOR(type, key) {
+    const isIpad = (type === "ipad");
+    const padType = isIpad ? 0x36 : 0x5c;
+    const bits = [];
+    for(let i=0; i<8; i++) {
+        bits.push((padType >> (7-i)) & 1);
+    }
+
+    let result = [];
+    for(let i=0; i<key.length; i++) {
+        result.push(key[i] ^ bits[i%8]);
+    }
+    return result;
+}
+
 // ---- Interaction ----
-document.getElementById('q1').addEventListener('submit', function(e) {
+document.getElementById("q1").addEventListener("submit", function(e) {
     e.preventDefault();
-    const input = document.getElementById('personalInfo').value;
+    const input = document.getElementById("personalInfo").value;
     const preprocessingRes = ConvertIntoState(GetFirst200Bits(ASCIIfy(input)));
     const C = thetaStep1(preprocessingRes);
     const thetaRes = thetaStep3(preprocessingRes, thetaStep2(C));
@@ -179,37 +241,123 @@ document.getElementById('q1').addEventListener('submit', function(e) {
     const piRes = pi(rhoRes);
     const chiRes = chi(piRes);
     const iotaRes = iota(chiRes);
-    const output = document.getElementById('output');
-    output.innerHTML = '';
+    const output = document.getElementById("output");
+    output.innerHTML = "";
 
     const Q1_phases = [
-        ['Preprocessing', preprocessingRes],
-        ['Theta', thetaRes],
-        ['Rho', rhoRes],
-        ['Pi', piRes],
-        ['Chi', chiRes],
-        ['Iota', iotaRes],
+        ["Preprocessing", preprocessingRes],
+        ["Theta", thetaRes],
+        ["Rho", rhoRes],
+        ["Pi", piRes],
+        ["Chi", chiRes],
+        ["Iota", iotaRes],
     ];
 
     for(let [phase, state] of Q1_phases) {
-        let pre = document.createElement('pre');
+        let pre = document.createElement("pre");
         pre.textContent = formatState(phase, state);
         output.appendChild(pre);
     }
 
-    let line = document.createElement('pre');
-    line.textContent = '-------------------\n';
+    let line = document.createElement("pre");
+    line.textContent = "-------------------\n";
     output.appendChild(line);
 });
 
+document.getElementById("q2").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const input = "AWS4" + document.getElementById("key").value.trim();
+    const date = document.getElementById("date").value.trim();
+    const region = document.getElementById("region").value.trim();
+    const service = document.getElementById("service").value.trim();
+    const signing = document.getElementById("sign").value.trim();
+
+    const paddedInput = addPadding(ASCIIfy(input));
+    const kDate_phase1 = XOR("ipad", paddedInput);
+    const kDate_phase2 = XOR("opad", paddedInput);
+
+    const paddedkDate = addPadding(hexToBits(kDateRes));
+    const kRegion_phase1 = XOR("ipad", paddedkDate);
+    const kRegion_phase2 = XOR("opad", paddedkDate);
+
+    const paddedkRegion = addPadding(hexToBits(kRegionRes));
+    const kService_phase1 = XOR("ipad", paddedkRegion);
+    const kService_phase2 = XOR("opad", paddedkRegion);
+
+    const paddedkService = addPadding(hexToBits(kServiceRes));
+    const kSigning_phase1 = XOR("ipad", paddedkService);
+    const kSigning_phase2 = XOR("opad", paddedkService);
+
+    const paddedkSigning = addPadding(hexToBits(kSigningRes));
+    const signature_phase1 = XOR("ipad", paddedkSigning);
+    const signature_phase2 = XOR("opad", paddedkSigning);
+    
+    const output = document.getElementById("output");
+    output.innerHTML = "";
+
+    const messages = [
+        ["date", bitsToHex(ASCIIfy(date))],
+        ["region", bitsToHex(ASCIIfy(region))],
+        ["service", bitsToHex(ASCIIfy(service))],
+        ["signing", bitsToHex(ASCIIfy(signing))],
+        ["String to sign", bitsToHex(ASCIIfy(stringToSign))]
+    ]
+
+    for(let [message, result] of messages) {
+        let pre = document.createElement("pre");
+        pre.textContent = " " + message + " in hex: " + result + "\n";
+        output.appendChild(pre);
+    }
+
+    let line = document.createElement("pre");
+    line.textContent = " -------------------\n";
+    output.appendChild(line);
+
+    const Q2_phases = [
+        ["Preprocessing", paddedInput],
+        ["inner", kDate_phase1],
+        ["kDate-XOR opad", kDate_phase2],
+        ["Preprocessing", paddedkDate],
+        ["kRegion-XOR ipad", kRegion_phase1],
+        ["kRegion-XOR opad", kRegion_phase2],
+        ["preprocessing", paddedkRegion],
+        ["kService-XOR ipad", kService_phase1],
+        ["kService-XOR opad", kService_phase2],
+        ["Preprocessing", paddedkService],
+        ["kSigning-XOR ipad", kSigning_phase1],
+        ["kSigning-XOR opad", kSigning_phase2],
+        ["Preprocessing", paddedkSigning],
+        ["signature-XOR ipad", signature_phase1],
+        ["signature-XOR opad", signature_phase2]
+    ];
+
+    for(let [phase, result] of Q2_phases) {
+        let pre = document.createElement("pre");
+        pre.textContent = formatResult(phase, bitsToHex(result));
+        output.appendChild(pre);
+    }
+});
+
+// ---- print ----
 function formatState(phase, state) {
     let result = ` ${phase}\n`;
     for(let y of yOrder) {
-        let row = ' ';
+        let row = " ";
         for(let x of xOrder) {
-            row += state[x][y].toString(16).toUpperCase().padStart(2, '0') + ' ';
+            row += state[x][y].toString(16).toUpperCase().padStart(2, '0') + " ";
         }
-        result += row + '\n';
+        result += row + "\n";
     }
     return result;
+}
+
+function formatResult(phase, result) {
+    let res = ` ${phase}\n` + " ";
+    for(let i=0; i<result.length; i++) {
+        if(i === result.length/2) {
+            res += "\n" + " ";
+        }
+        res += result[i];
+    }
+    return res;
 }

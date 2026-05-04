@@ -8,7 +8,7 @@
     box-sizing: border-box;
 }
 
-.content {
+.content, .pre {
     padding: 20px;
 }
 
