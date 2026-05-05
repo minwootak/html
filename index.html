@@ -29,6 +29,17 @@
                 <input type="text" id="sign" value="aws4_request"><br>
                 <button type="submit">proceed</button>
             </form>
+            <form class="content" id="q3">
+                <p>Q3</p>
+                <p>Inputs for the Key and IV are only for the consistent demonstration purpose.</p>
+                <label for="plainText">String to Encrypt</label><br>
+                <input type="text" id="plainText" value="This is a sample text. Please change it to whatever string you want to encrypt."><br>
+                <label for="key">Key</label><br>
+                <input type="text" id="key" placeholder="Enter text for the AES key"><br>
+                <label for="iv">Initilization Vector</label><br>
+                <input type="text" id="iv" placeholder="Enter text for the Initialization Vector"><br>
+                <button type="submit">Proceed</button>
+            </form>
         </div>
         <div class="output-section">
             <div id="output">
@@ -36,6 +47,7 @@
             </div>
         </div>
     </div>
+    <script src="aes.js"></script>
     <script src="Q1.js"></script>
 </body>
 </html>

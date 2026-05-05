@@ -17,6 +17,13 @@ const kServiceRes = "262ef0c1ace903a38c06e55d5c669fa43bbdd31abbf6f2e122ea14a1bbd
 const kSigningRes = "a0f2993c415bbb018efb555f3207e51a19b0300434279c60ce42b842fdc361dc";
 const stringToSign = "AWS4-HMAC-SHA256\n20260414M123600Z\n20260414/us-east-1/iam/aws4_request\nf536975d06c0309214f805bb90ccff089219ecd68b2577efef23edd43b7e1a59";
 
+const KC = aesjs.utils.hex.toBytes("30fe8f03c4e5a3b3fd6c61149a815dc1");
+const KS = aesjs.utils.hex.toBytes("c287da6ac055e4b963362af0a9d31b8b");
+const NC = aesjs.utils.hex.toBytes("01ecf4202a509c36c0a5c87b67844541");
+const c = aesjs.utils.utf8.toBytes("Minwoo");
+const s = aesjs.utils.utf8.toBytes("Tak");
+const Lt = aesjs.utils.utf8.toBytes("8h");
+
 // ---- Preprocessing phase ----
 function ASCIIfy(personalInfo) {
     let ASCIIfiedBits = [];
@@ -103,6 +110,7 @@ function hexToBits(hex) {
     return bits;
 }
 
+// ------ Q1 ------
 // ---- Theta phase ----
 function thetaStep1(stateArray) {
     let C = new Array(5).fill(0);
@@ -230,6 +238,68 @@ function XOR(type, key) {
     return result;
 }
 
+// ------ Q3 ------
+// ---- AES CBC ----
+function Encrypt(plainText, aesKey, initVector) {
+    const plainTextBytes = aesjs.padding.pkcs7.pad(plainText);
+
+    const aes = new aesjs.ModeOfOperation.cbc(aesKey, initVector);
+    const encryptedBytes = aes.encrypt(plainTextBytes);
+
+    return aesjs.utils.hex.fromBytes(encryptedBytes);
+}
+
+function Decrypt(encryptedRes, aesKey, initVector) {
+    const encryptedText = aesjs.utils.hex.toBytes(encryptedRes);
+
+    const aes = new aesjs.ModeOfOperation.cbc(aesKey, initVector);
+    const decryptedBytes = aesjs.padding.pkcs7.strip(aes.decrypt(encryptedText));
+
+    return decryptedBytes;
+}
+
+// ---- Kerberos ----
+function KerberosPhase1(sk, iv) {
+    const c_UTF8 = aesjs.utils.utf8.fromBytes(c);
+    const s_UTF8 = aesjs.utils.utf8.fromBytes(s);
+    const Lt_UTF8 = aesjs.utils.utf8.fromBytes(Lt);
+    const NC_Hex = aesjs.utils.hex.fromBytes(NC);
+    const step1 = {c_UTF8, s_UTF8, Lt_UTF8, NC_Hex};
+
+    const plainText = new Uint8Array([...sk, ...s, ...Lt, ...NC]);
+    const EncryptedKC = Encrypt(plainText, KC, iv);
+
+    const plainTicket = new Uint8Array([...sk, ...c, ...Lt]);
+    const ticket = Encrypt(plainTicket, KS, iv);
+    const step2 = {EncryptedKC, ticket};
+    return {step1, step2, ticket};
+}
+
+function KerberosPhase2(ticket, sk, iv) {
+    const timeStamp = aesjs.utils.utf8.toBytes("20260505120000");
+
+    const plainAuth = new Uint8Array([...c, ...timeStamp, ...sk]);
+    const auth = Encrypt(plainAuth, sk, iv);
+    const step1 = {ticket, auth};
+
+    const plainResponse = new Uint8Array([...timeStamp, ...sk]);
+    const response = Encrypt(plainResponse, sk, iv);
+    const step2 = {response};
+    return {step1, step2, auth};
+}
+
+function VerifyClient(ticket, auth, iv) {
+    const decryptedTicket = Decrypt(ticket, KS, iv);
+    const extractedSk = decryptedTicket.slice(0, 16);
+    const decryptedAuth = aesjs.utils.hex.fromBytes(Decrypt(auth, extractedSk, iv));
+    return decryptedAuth.includes(aesjs.utils.hex.fromBytes(extractedSk));
+}
+
+function VerifyServer(response, sk, iv) {
+    const decryptedResponse = aesjs.utils.hex.fromBytes(Decrypt(response, sk, iv));
+    return decryptedResponse.includes(aesjs.utils.hex.fromBytes(sk));
+}
+
 // ---- Interaction ----
 document.getElementById("q1").addEventListener("submit", function(e) {
     e.preventDefault();
@@ -333,7 +403,45 @@ document.getElementById("q2").addEventListener("submit", function(e) {
 
     for(let [phase, result] of Q2_phases) {
         let pre = document.createElement("pre");
-        pre.textContent = formatResult(phase, bitsToHex(result));
+        pre.textContent = formatResultLong(phase, bitsToHex(result));
+        output.appendChild(pre);
+    }
+});
+
+document.getElementById("q3").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const plainText = aesjs.utils.utf8.toBytes(document.getElementById("plainText").value);
+    const key = aesjs.padding.pkcs7.pad(aesjs.utils.utf8.toBytes(document.getElementById("key").value)).slice(0, 16);
+    const initVector = aesjs.padding.pkcs7.pad(aesjs.utils.utf8.toBytes(document.getElementById("iv").value)).slice(0, 16);
+
+    const encryptionRes = Encrypt(plainText, key, initVector);
+    const decryptionRes = aesjs.utils.utf8.fromBytes(Decrypt(encryptionRes, key, initVector));
+
+    const kerberosPhase1Res = KerberosPhase1(key, initVector);
+    const kerberosPhase2Res = KerberosPhase2(kerberosPhase1Res.ticket, key, initVector);
+
+    const output = document.getElementById("output");
+
+    const Q3_phases = [
+        ["Encryption", encryptionRes],
+        ["Decryption", decryptionRes],
+        ["Phase1-Client to AS", kerberosPhase1Res.step1], 
+        ["Phase1-AS to Client", kerberosPhase1Res.step2],
+        ["Phase2-Client to Server", kerberosPhase2Res.step1],
+        ["Phase2-Server to Client", kerberosPhase2Res.step2],
+        ["Verification-Server verifying Client", "isClientAuthenticated: " + VerifyClient(kerberosPhase1Res.ticket, kerberosPhase2Res.step1.auth, initVector)],
+        ["Verification-Client verifying Server", "isServerAuthenticated: " + VerifyServer(kerberosPhase2Res.step2.response, key, initVector)]
+    ]
+
+    for(let [phase, result] of Q3_phases) {
+        let pre = document.createElement("pre");
+        if(phase.includes("Phase")) {
+            pre.textContent = formatResultJSON(phase, result);
+        } else if(phase.includes("Verification")) {
+            pre.textContent = formatResultShort(phase, result);
+        } else {
+            pre.textContent = formatResultLong(phase, result);
+        }
         output.appendChild(pre);
     }
 });
@@ -351,7 +459,7 @@ function formatState(phase, state) {
     return result;
 }
 
-function formatResult(phase, result) {
+function formatResultLong(phase, result) {
     let res = ` ${phase}\n` + " ";
     for(let i=0; i<result.length; i++) {
         if(i === result.length/2) {
@@ -359,5 +467,17 @@ function formatResult(phase, result) {
         }
         res += result[i];
     }
+    return res;
+}
+
+function formatResultShort(phase, result) {
+    let res = ` ${phase}\n` + " ";
+    res += result;
+    return res;
+}
+
+function formatResultJSON(phase, result) {
+    let res = ` ${phase}\n`;
+    res += JSON.stringify(result, null, 2);
     return res;
 }
