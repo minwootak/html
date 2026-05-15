@@ -24,6 +24,19 @@ const c = aesjs.utils.utf8.toBytes("Minwoo");
 const s = aesjs.utils.utf8.toBytes("Tak");
 const Lt = aesjs.utils.utf8.toBytes("8h");
 
+const sNumber = "S3818058";
+const p = bigInt("178011905478542266528237562450159990145232156369120674273274450314442865788737020770612695252123463079567156784778466449970650770920727857050009668388144034129745221171818506047231150039301079959358067395348717066319802262019714966524135060945913707594956514672855690606794135837542707371727429551343320695239");
+const g = bigInt("174068207532402095185811980123523436538604490794561350978495831040599953488455823147851597408940950725307797094915759492368300574252438761037084473467180148876118103083043754985190983472601550494691329488083395492313850000361646482644608492304078721818959999056496097769368017749273708962006689187956744210730");
+const vpcName = "Minwoo";
+const dataCenterName = "Tak";
+
+const p2 = bigInt("8cb07b6f520e081c8eb473253041f13e57a697655f5782b61dd7af3d9dd44a5824922affa02d619eabea5e625835af9292b92a481caee1dcd128fcdd7132d973", 16);
+const q2 = bigInt("853742bd61f0f0236696e1d8ee3ff76858be8189f0d86701b6cdc0c62b2e0c56792eaa6e50ac12a76eedb36bb718d27cd84449380df7230bb427a848dd7a096f", 16);
+const n2 = p2.multiply(q2);
+const phi2 = p2.minus(1).multiply(q2.minus(1));
+
+const emailAddress = "s3818058@rmit.edu.vn";
+
 // ---- Preprocessing phase ----
 function ASCIIfy(personalInfo) {
     let ASCIIfiedBits = [];
@@ -70,6 +83,18 @@ function ConvertIntoState(rawInfo) {
         }
     }
     return stateArray;
+}
+
+function PrimeFactorization(sNumber) {
+    let divider = 2;
+    while(divider * divider <= sNumber) {
+        if(sNumber % divider === 0) {
+            sNumber /= divider;
+        } else {
+            divider++;
+        }
+    }
+    return sNumber;
 }
 
 // ---- Helper ----
@@ -300,7 +325,47 @@ function VerifyServer(response, sk, iv) {
     return decryptedResponse.includes(aesjs.utils.hex.fromBytes(sk));
 }
 
-// ---- Interaction ----
+// ------ Q4 ------
+// ---- Random Generator ----
+function getRandom() {
+    const min = bigInt(2).pow(159);
+    const max = bigInt(2).pow(160).minus(1);
+    return bigInt.randBetween(min, max);
+}
+
+// ---- SHA1 Hash ----
+function SHA1Hash(value) {
+    return sha1(value);
+}
+
+// ---- Modular exponentiation algorithm operation on BigInteger ----
+function ModularExponentiation(hashedValue) {
+    const x = bigInt(hashedValue, 16);
+    const y = bigInt(g).modPow(x, p);
+    return y.toString(16);
+}
+
+// ------ Q5 ------
+// ---- 512-bits Prime Number Generator ----
+function generatePubKeyElements() {
+    const min = bigInt(2).pow(511);
+    const max = bigInt(2).pow(512).minus(1);
+    let p;
+    let q;
+
+    do {
+        p = bigInt.randBetween(min, max);
+    } while(!p.isPrime());
+    do {
+        q = bigInt.randBetween(min, max);
+    } while(!q.isPrime());
+    
+    let n = p.multiply(q);
+    let phi = p.minus(1).multiply(q.minus(1));
+    return {p, q, n, phi};
+}
+
+// ------ Interaction ------
 document.getElementById("q1").addEventListener("submit", function(e) {
     e.preventDefault();
     const input = document.getElementById("personalInfo").value;
@@ -328,10 +393,6 @@ document.getElementById("q1").addEventListener("submit", function(e) {
         pre.textContent = formatState(phase, state);
         output.appendChild(pre);
     }
-
-    let line = document.createElement("pre");
-    line.textContent = "-------------------\n";
-    output.appendChild(line);
 });
 
 document.getElementById("q2").addEventListener("submit", function(e) {
@@ -421,6 +482,7 @@ document.getElementById("q3").addEventListener("submit", function(e) {
     const kerberosPhase2Res = KerberosPhase2(kerberosPhase1Res.ticket, key, initVector);
 
     const output = document.getElementById("output");
+    output.innerHTML = "";
 
     const Q3_phases = [
         ["Encryption", encryptionRes],
@@ -431,7 +493,7 @@ document.getElementById("q3").addEventListener("submit", function(e) {
         ["Phase2-Server to Client", kerberosPhase2Res.step2],
         ["Verification-Server verifying Client", "isClientAuthenticated: " + VerifyClient(kerberosPhase1Res.ticket, kerberosPhase2Res.step1.auth, initVector)],
         ["Verification-Client verifying Server", "isServerAuthenticated: " + VerifyServer(kerberosPhase2Res.step2.response, key, initVector)]
-    ]
+    ];
 
     for(let [phase, result] of Q3_phases) {
         let pre = document.createElement("pre");
@@ -446,9 +508,88 @@ document.getElementById("q3").addEventListener("submit", function(e) {
     }
 });
 
+document.getElementById("q4").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const randomValue = getRandom(16);
+    const sha1HashRes = SHA1Hash(randomValue.toString(16));
+    
+    const exponentationRes = ModularExponentiation(SHA1Hash(sNumber));
+
+    const randomA = getRandom(16);
+    const randomB = getRandom(16);
+
+    const A = SHA1Hash(randomA.toString(16) + vpcName);
+    const B = SHA1Hash(randomB.toString(16) + dataCenterName);
+
+    const exponentiationResA = ModularExponentiation(A);
+    const exponentiationResB = ModularExponentiation(B);
+
+    const GA = bigInt(exponentiationResA, 16);
+    const GB = bigInt(exponentiationResB, 16);
+    const secretKeyMinwoo = GB.modPow(bigInt(A, 16), p);
+    const secretKeyTak = GA.modPow(bigInt(B, 16), p);
+
+    const output = document.getElementById("output");
+    output.innerHTML = "";
+
+    const Q4_phases = [
+        ["RandomValue", randomValue.toString(16)],
+        ["HashResult", sha1HashRes],
+        ["ModularExponentationResult", exponentationRes],
+        ["randomValue-A", randomA.toString(16)],
+        ["randomValue-B", randomB.toString(16)],
+        ["randomValue-A-Hashed + vpcName", SHA1Hash(randomA.toString(16) + vpcName)],
+        ["randomValue-B-Hashed + dataCenterName", SHA1Hash(randomB.toString(16) + dataCenterName)],
+        ["ModularExponentiationResult-A", exponentiationResA],
+        ["ModularExponentiationResult-B", exponentiationResB],
+        ["DoesSecretKeysMatch?", (secretKeyMinwoo.toString(16) === secretKeyTak.toString(16))]
+    ];
+
+    for(let [phase, result] of Q4_phases) {
+        let pre = document.createElement("pre");
+        if(phase.includes("Modular")) {
+            pre.textContent = formatResultLong(phase, result);
+        } else {
+            pre.textContent = formatResultShort(phase, result);
+        }
+        output.appendChild(pre);
+    }
+});
+
+document.getElementById("q5").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const sNumbersWithoutS = sNumber.replace(/\D/g, "");
+    const largestPrime = PrimeFactorization(sNumbersWithoutS);
+    const pubKeyElements = {p2, q2, n2, phi2};
+
+    const output = document.getElementById("output");
+    output.innerHTML = "";
+
+    const Q5_phases = [
+        ["LargestPrimeNumber", largestPrime],
+        ["LargestPrimeNumberinHex", largestPrime.toString(16)],
+        ["p", pubKeyElements.p2.toString(16)],
+        ["q", pubKeyElements.q2.toString(16)],
+        ["n", pubKeyElements.n2.toString(16)],
+        ["phi", pubKeyElements.phi2.toString(16)],
+        ["e", largestPrime.toString(16)],
+        ["emailHex", bitsToHex(ASCIIfy(emailAddress))]
+    ]
+
+    for(let [phase, result] of Q5_phases) {
+        let pre = document.createElement("pre");
+        if(phase === "p" || phase === "q" || phase === "n" || phase === "phi") {
+            pre.textContent = formatResultExtraLong(phase, result);
+        } else {
+            pre.textContent = formatResultShort(phase, result);
+        }
+        output.appendChild(pre);
+    }
+});
+
 // ---- print ----
 function formatState(phase, state) {
-    let result = ` ${phase}\n`;
+    let result = `${phase}\n`;
     for(let y of yOrder) {
         let row = " ";
         for(let x of xOrder) {
@@ -460,10 +601,10 @@ function formatState(phase, state) {
 }
 
 function formatResultLong(phase, result) {
-    let res = ` ${phase}\n` + " ";
+    let res = `${phase}\n`;
     for(let i=0; i<result.length; i++) {
         if(i === result.length/2) {
-            res += "\n" + " ";
+            res += "\n";
         }
         res += result[i];
     }
@@ -471,7 +612,7 @@ function formatResultLong(phase, result) {
 }
 
 function formatResultShort(phase, result) {
-    let res = ` ${phase}\n` + " ";
+    let res = `${phase}\n`;
     res += result;
     return res;
 }
@@ -479,5 +620,16 @@ function formatResultShort(phase, result) {
 function formatResultJSON(phase, result) {
     let res = ` ${phase}\n`;
     res += JSON.stringify(result, null, 2);
+    return res;
+}
+
+function formatResultExtraLong(phase, result) {
+    let res = `${phase}\n`;
+    for(let i=0; i<result.length; i++) {
+        if(i !== 0 && i%40 === 0) {
+            res += "\n";
+        }
+        res += result[i];
+    }
     return res;
 }

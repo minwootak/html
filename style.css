@@ -9,7 +9,7 @@
 }
 
 .content, .pre {
-    padding: 20px;
+    padding: 10px;
 }
 
 .input-section {
@@ -18,4 +18,8 @@
 
 .output-section {
     overflow-y: auto;
+}
+
+#output {
+    padding-left: 10px;
 }
